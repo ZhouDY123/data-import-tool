@@ -152,7 +152,8 @@ function parseAttachment(storeKey, bytes) {
     : XLSX.read(bytes, { type: 'buffer', raw: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-  const parsed = storeKey === 'jd' ? parseJd(rows) : storeKey === 'tmall' ? parseTmall(rows) : parsePdd(rows);
+  const importableRows = rows.filter(row => normalizeText(row['订单状态']) !== '交易关闭');
+  const parsed = storeKey === 'jd' ? parseJd(importableRows) : storeKey === 'tmall' ? parseTmall(importableRows) : parsePdd(importableRows);
   return { ...deduplicate(parsed), sourceRows: rows.length, format: isCsv ? 'CSV' : 'Excel' };
 }
 

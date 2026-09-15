@@ -14,6 +14,13 @@ test('带 BOM 的拼多多商品表头仍能识别商品名', () => {
   assert.equal(row['商品'] || row['\uFEFF商品'], '三奇医用口罩');
 });
 
+test('交易关闭的订单在解析前被排除', () => {
+  const rows = [{ 订单状态: '交易关闭' }, { 订单状态: '买家已付款' }];
+  const importable = rows.filter(row => String(row['订单状态'] || '').trim() !== '交易关闭');
+  assert.equal(importable.length, 1);
+  assert.equal(importable[0]['订单状态'], '买家已付款');
+});
+
 test('商品名称按约定映射分类编号', () => {
   const category = name => {
     const hasMask = name.includes('口罩');
