@@ -71,7 +71,7 @@ function standard(orderNo, paidAt, sku, name, amountFen, quantity, region, row) 
   return {
     order: {
       orderNo, paidAt, sku, name, amountFen, quantity: count || 1, region: region || '—', categoryNo: categoryFromName(name),
-      dataType: /^(VJD|VTM|VPD)/.test(orderNo) ? 'virtual' : 'real'
+      dataType: 'real'
     },
     errors: errors.map(message => ({ row, message }))
   };
@@ -227,12 +227,16 @@ function publicTask(task) {
   };
 }
 
-async function importTask(taskId, storeKey) {
+async function importTask(taskId, storeKey, dataType = 'real') {
   const task = JSON.parse(await fs.readFile(path.join(TASK_DIR, `${taskId}.json`), 'utf8'));
   const store = task.stores.find(item => item.key === storeKey);
   if (!store) throw new Error('未找到待导入店铺。');
   // 历史任务也按现行商品命名规则分类，重导时可修正此前的分类结果。
-  for (const order of store.orders) order.categoryNo = categoryFromName(order.name);
+  const normalizedDataType = dataType === 'virtual' ? 'virtual' : 'real';
+  for (const order of store.orders) {
+    order.categoryNo = categoryFromName(order.name);
+    order.dataType = normalizedDataType;
+  }
   const chunks = [];
   for (let offset = 0; offset < store.orders.length; offset += 200) {
     const orders = store.orders.slice(offset, offset + 200);
@@ -296,7 +300,7 @@ async function automaticSync() {
       const task = { id: taskId, createdAt: new Date().toISOString(), status: 'previewed', stores: [{ key: storeKey, label: store.label, endpoint: store.endpoint, attachment: { hash, filename: latest.filename, bytes: bytes.length }, ...result, preview: result.orders.slice(0, 8) }] };
       await fs.mkdir(TASK_DIR, { recursive: true });
       await fs.writeFile(path.join(TASK_DIR, `${taskId}.json`), JSON.stringify(task, null, 2));
-      const imported = await importTask(taskId, storeKey);
+      const imported = await importTask(taskId, storeKey, 'real');
       state.stores ||= {};
       state.stores[storeKey] = { filename: latest.filename, syncedAt: new Date().toISOString(), received: imported.received, skipped: imported.skipped };
       await fs.writeFile(SYNC_STATE_FILE, JSON.stringify(state, null, 2));
@@ -318,7 +322,7 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req); return json(res, 200, await preview(body.credentials, body.stores || Object.keys(STORES)));
     }
     if (req.method === 'POST' && url.pathname === '/api/import') {
-      const body = await readBody(req); return json(res, 200, await importTask(body.taskId, body.storeKey));
+      const body = await readBody(req); return json(res, 200, await importTask(body.taskId, body.storeKey, body.dataType));
     }
     if (req.method === 'GET' && url.pathname === '/api/stores') return json(res, 200, STORES);
     if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
