@@ -1,0 +1,23 @@
+const state = { task: null, currentStore: null };
+const $ = selector => document.querySelector(selector);
+const credentialForm = $('#credential-form');
+const toast = $('#toast');
+
+function notify(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(notify.timer); notify.timer = setTimeout(() => toast.classList.remove('show'), 4200); }
+function credentials() { return { username: $('#username').value.trim(), password: $('#password').value }; }
+function setBusy(button, busy, label) { button.disabled = busy; button.dataset.label ||= button.textContent; button.textContent = busy ? label : button.dataset.label; }
+function formatMoney(fen) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(fen / 100); }
+function storeCard(key) { return document.querySelector(`[data-store="${key}"]`); }
+function setStatus(key, message, tone = '') { const node = storeCard(key).querySelector('.card-status'); node.textContent = message; node.className = `card-status ${tone}`; }
+
+async function request(url, body) { const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || '请求失败。'); return data; }
+function renderStore(item) { const card = storeCard(item.key); card.querySelector('.attachment').textContent = `${item.format} · ${(item.attachment.bytes / 1024).toFixed(1)} KB`; card.querySelector('.import').disabled = item.ordersCount === 0; setStatus(item.key, `已解析 ${item.sourceRows} 行，有效 ${item.ordersCount} 条${item.errorCount ? `，发现 ${item.errorCount} 个问题` : ''}。`, item.errorCount ? '' : 'success'); }
+function showDetail(item) { state.currentStore = item.key; $('#detail').classList.remove('hidden'); $('#detail-heading').textContent = `${item.label} · 订单预览`; $('#detail-summary').textContent = `显示前 ${item.preview.length} 条；导入目标：${item.endpoint.split('/').pop()}`; $('#preview-rows').innerHTML = item.preview.map(order => `<tr><td>${escapeHtml(order.orderNo)}</td><td>${escapeHtml(order.paidAt)}</td><td>${escapeHtml(order.sku)}</td><td>${escapeHtml(order.name)}</td><td>${formatMoney(order.amountFen)}</td><td>${order.quantity}</td><td>${escapeHtml(order.region)}</td></tr>`).join(''); const errors = $('#error-panel'); if (item.errors.length) { errors.classList.remove('hidden'); errors.textContent = `发现 ${item.errors.length} 个不能导入的记录：${item.errors.slice(0, 5).map(e => `第 ${e.row} 行：${e.message}`).join('；')}${item.errors.length > 5 ? '……' : ''}`; } else errors.classList.add('hidden'); }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]); }
+
+async function preview(stores, button) { if (!credentials().username || !credentials().password) { notify('请输入后台账号和密码。'); $('#password').focus(); return; } setBusy(button, true, '正在获取…'); stores.forEach(key => setStatus(key, '正在下载并解析附件…')); try { const task = await request('/api/preview', { credentials: credentials(), stores }); state.task = task; task.stores.forEach(renderStore); if (task.stores[0]) showDetail(task.stores[0]); notify(`已完成 ${task.stores.length} 个店铺的附件解析。`); } catch (error) { stores.forEach(key => setStatus(key, error.message, 'error')); notify(error.message); } finally { setBusy(button, false); } }
+
+credentialForm.addEventListener('submit', event => { event.preventDefault(); preview(['jd', 'tmall', 'pdd'], $('#preview-all')); });
+$('#toggle-password').addEventListener('click', () => { const input = $('#password'); const show = input.type === 'password'; input.type = show ? 'text' : 'password'; $('#toggle-password').textContent = show ? '隐藏' : '显示'; $('#toggle-password').setAttribute('aria-label', show ? '隐藏密码' : '显示密码'); });
+document.querySelectorAll('.preview-one').forEach(button => button.addEventListener('click', () => preview([button.closest('.store-card').dataset.store], button)));
+document.querySelectorAll('.import').forEach(button => button.addEventListener('click', async () => { const key = button.closest('.store-card').dataset.store; if (!state.task) return; setBusy(button, true, '正在导入…'); setStatus(key, '正在分批提交订单…'); try { const result = await request('/api/import', { taskId: state.task.id, storeKey: key }); setStatus(key, `导入完成：写入或更新 ${result.received} 条，接口跳过 ${result.skipped} 条。`, 'success'); notify(`${storeCard(key).querySelector('h2').textContent} 已导入 ${result.received} 条。`); } catch (error) { setStatus(key, error.message, 'error'); notify(error.message); } finally { setBusy(button, false); } }));

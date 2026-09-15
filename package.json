@@ -1,0 +1,14 @@
+{
+  "name": "order-import-console",
+  "version": "1.0.0",
+  "private": true,
+  "description": "三个店铺附件的下载、解析与订单导入工具",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}

@@ -1,0 +1,5 @@
+node_modules/
+data/
+.artifact-build/
+虚拟订单数据_*/
+*.inspect.ndjson
