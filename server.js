@@ -69,7 +69,10 @@ function standard(orderNo, paidAt, sku, name, amountFen, quantity, region, row) 
   const count = Number(quantity);
   if (!Number.isInteger(count) || count <= 0) errors.push('数量必须是正整数');
   return {
-    order: { orderNo, paidAt, sku, name, amountFen, quantity: count || 1, region: region || '—', categoryNo: categoryFromName(name) },
+    order: {
+      orderNo, paidAt, sku, name, amountFen, quantity: count || 1, region: region || '—', categoryNo: categoryFromName(name),
+      dataType: /^(VJD|VTM|VPD)/.test(orderNo) ? 'virtual' : 'real'
+    },
     errors: errors.map(message => ({ row, message }))
   };
 }

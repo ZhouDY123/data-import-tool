@@ -21,6 +21,12 @@ test('交易关闭的订单在解析前被排除', () => {
   assert.equal(importable[0]['订单状态'], '买家已付款');
 });
 
+test('虚拟订单号使用 virtual 数据类型', () => {
+  const dataType = orderNo => /^(VJD|VTM|VPD)/.test(orderNo) ? 'virtual' : 'real';
+  assert.equal(dataType('VPD20260915000001'), 'virtual');
+  assert.equal(dataType('5127684732051009910'), 'real');
+});
+
 test('商品名称按约定映射分类编号', () => {
   const category = name => {
     const hasMask = name.includes('口罩');
