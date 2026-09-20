@@ -239,7 +239,7 @@ async function importTask(taskId, storeKey, dataType = 'real') {
     order.dataType = normalizedDataType;
   }
   const chunks = [];
-  const ledger = await readJson(IMPORT_LEDGER_FILE, { identities: {} });
+  const ledger = await loadImportLedger();
   let created = 0;
   let updated = 0;
   for (let offset = 0; offset < store.orders.length; offset += 200) {
@@ -268,6 +268,28 @@ async function importTask(taskId, storeKey, dataType = 'real') {
 async function readJson(file, fallback) {
   try { return JSON.parse(await fs.readFile(file, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return fallback; throw error; }
+}
+
+async function loadImportLedger() {
+  const ledger = await readJson(IMPORT_LEDGER_FILE, { identities: {}, historySeeded: false });
+  if (ledger.historySeeded) return ledger;
+  await fs.mkdir(TASK_DIR, { recursive: true });
+  for (const file of await fs.readdir(TASK_DIR)) {
+    if (!file.endsWith('.json')) continue;
+    const task = await readJson(path.join(TASK_DIR, file), null);
+    if (!task) continue;
+    for (const store of task.stores || []) {
+      if (!store.import) continue;
+      for (const order of store.orders || []) {
+        if (!order.orderNo || !order.sku) continue;
+        const identity = `${store.key}\u0000${order.orderNo}\u0000${order.sku}`;
+        ledger.identities[identity] ||= task.createdAt || new Date().toISOString();
+      }
+    }
+  }
+  ledger.historySeeded = true;
+  await fs.writeFile(IMPORT_LEDGER_FILE, JSON.stringify(ledger, null, 2));
+  return ledger;
 }
 
 async function cleanupAttachments() {
