@@ -27,6 +27,12 @@ test('自动同步未指定数据类型时使用真实数据', () => {
   assert.equal(normalizeDataType('virtual'), 'virtual');
 });
 
+test('导入索引以平台、订单号和 SKU 区分订单项', () => {
+  const identity = (platform, orderNo, sku) => `${platform}\u0000${orderNo}\u0000${sku}`;
+  assert.notEqual(identity('tmall', 'A001', '蓝色'), identity('tmall', 'A001', '红色'));
+  assert.notEqual(identity('tmall', 'A001', '蓝色'), identity('pdd', 'A001', '蓝色'));
+});
+
 test('商品名称按约定映射分类编号', () => {
   const category = name => {
     const hasMask = name.includes('口罩');

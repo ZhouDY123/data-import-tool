@@ -11,6 +11,7 @@ const ATTACHMENT_DIR = path.join(DATA_DIR, 'attachments');
 const TASK_DIR = path.join(DATA_DIR, 'tasks');
 const AUTOMATION_FILE = path.join(DATA_DIR, 'automation.json');
 const SYNC_STATE_FILE = path.join(DATA_DIR, 'sync-state.json');
+const IMPORT_LEDGER_FILE = path.join(DATA_DIR, 'import-ledger.json');
 const SYNC_INTERVAL_MS = 60 * 60 * 1000;
 const ATTACHMENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -238,14 +239,27 @@ async function importTask(taskId, storeKey, dataType = 'real') {
     order.dataType = normalizedDataType;
   }
   const chunks = [];
+  const ledger = await readJson(IMPORT_LEDGER_FILE, { identities: {} });
+  let created = 0;
+  let updated = 0;
   for (let offset = 0; offset < store.orders.length; offset += 200) {
     const orders = store.orders.slice(offset, offset + 200);
     const response = await fetch(store.endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ orders }) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok || !body.ok) throw new Error(`第 ${chunks.length + 1} 批导入失败：${body.error || `HTTP ${response.status}`}`);
     chunks.push(body);
+    // 接口未逐项返回跳过明细；仅在整批成功时写入本地索引，保证新增/更新统计可追溯。
+    if (Number(body.skipped || 0) === 0) {
+      for (const order of orders) {
+        const identity = `${storeKey}\u0000${order.orderNo}\u0000${order.sku}`;
+        if (ledger.identities[identity]) updated += 1;
+        else created += 1;
+        ledger.identities[identity] = new Date().toISOString();
+      }
+    }
   }
-  store.import = { completedAt: new Date().toISOString(), batches: chunks.length, received: chunks.reduce((sum, item) => sum + Number(item.received || 0), 0), skipped: chunks.reduce((sum, item) => sum + Number(item.skipped || 0), 0) };
+  await fs.writeFile(IMPORT_LEDGER_FILE, JSON.stringify(ledger, null, 2));
+  store.import = { completedAt: new Date().toISOString(), batches: chunks.length, received: chunks.reduce((sum, item) => sum + Number(item.received || 0), 0), skipped: chunks.reduce((sum, item) => sum + Number(item.skipped || 0), 0), created, updated };
   task.status = task.stores.every(item => item.import || item.orders.length === 0) ? 'imported' : 'partially_imported';
   await fs.writeFile(path.join(TASK_DIR, `${taskId}.json`), JSON.stringify(task, null, 2));
   return store.import;
@@ -302,9 +316,9 @@ async function automaticSync() {
       await fs.writeFile(path.join(TASK_DIR, `${taskId}.json`), JSON.stringify(task, null, 2));
       const imported = await importTask(taskId, storeKey, 'real');
       state.stores ||= {};
-      state.stores[storeKey] = { filename: latest.filename, syncedAt: new Date().toISOString(), received: imported.received, skipped: imported.skipped };
+      state.stores[storeKey] = { filename: latest.filename, syncedAt: new Date().toISOString(), received: imported.received, created: imported.created, updated: imported.updated, skipped: imported.skipped };
       await fs.writeFile(SYNC_STATE_FILE, JSON.stringify(state, null, 2));
-      console.log(`${store.label}：已自动导入 ${imported.received} 条。`);
+      console.log(`${store.label}：新增 ${imported.created} 条，更新 ${imported.updated} 条，跳过 ${imported.skipped} 条。`);
     }
     await cleanupAttachments();
   } catch (error) {
