@@ -377,6 +377,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`订单导入台已启动：http://127.0.0.1:${PORT}`);
+  void loadImportLedger().catch(error => console.error(`导入索引补建失败：${error.message}`));
   void automaticSync();
   setInterval(() => void automaticSync(), SYNC_INTERVAL_MS);
 });
